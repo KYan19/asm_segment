@@ -1,0 +1,3 @@
+*.tif
+*.tar.gz
+__pycache__/
