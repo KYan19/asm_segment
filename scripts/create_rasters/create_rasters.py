@@ -7,7 +7,7 @@ import geopandas as gpd
 import rasterio
 from rasterio.features import geometry_mask
 
-data_path = "/n/home07/kayan/data/karena.tar.gz" # home directory
+data_path = "/n/home07/kayan/asm/data/karena.tar.gz" # home directory
 out_path = "/n/holyscratch01/tambe_lab/kayan/" # global scratch
 
 # comment next two lines out if images have already been extracted

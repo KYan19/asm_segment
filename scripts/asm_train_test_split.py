@@ -4,10 +4,10 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 def split_asm_data(
-    path="/n/home07/kayan/data/filtered_labels.geojson", 
+    path="/n/home07/kayan/asm/data/filtered_labels.geojson", 
     stratify_col="country", 
     save = True,
-    out_path = "/n/home07/kayan/data/train_test_split",
+    out_path = "/n/home07/kayan/asm/data/train_test_split",
     n = None
 ):
     """Split data into train/test/val sets.
