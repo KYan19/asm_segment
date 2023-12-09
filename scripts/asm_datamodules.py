@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 from torchgeo.datasets import NonGeoDataset
 from torchgeo.datamodules import NonGeoDataModule
+from torchvision.transforms import Resize, InterpolationMode
 from torchvision.transforms.functional import pad
 import geopandas as gpd
 import rasterio
@@ -19,16 +20,20 @@ def min_max_transform(sample, target_size=(256,256)):
     
     img_norm = torch.tensor(img_norm).permute(2, 0, 1) # re-permute spectral channels to first dimension
     
-    # pad data to be 256x256
-    img_norm = [
-            pad(channel, padding=(0,0,target_size[1] - channel.shape[1], target_size[0] - channel.shape[0]), fill=0)
-            for channel in img_norm
-        ]
-    img_norm = torch.stack(img_norm, dim=0)
-    mask = pad(mask, padding=(0,0,target_size[1] - mask.shape[1], target_size[0] - mask.shape[0]), fill=0)
+    # resize data to be 256x256
+    img_norm = Resize((256,256),antialias=True)(torch.unsqueeze(img_norm,0))
+    mask = Resize((256,256),interpolation=InterpolationMode.NEAREST)(torch.unsqueeze(mask, 0))
     
-    sample["image"] = img_norm
-    sample["mask"] = mask
+    # pad data to be 256x256
+    #img_norm = [
+    #        pad(channel, padding=(0,0,target_size[1] - channel.shape[1], target_size[0] - channel.shape[0]), fill=0)
+    #        for channel in img_norm
+    #    ]
+    #img_norm = torch.stack(img_norm, dim=0)
+    #mask = pad(mask, padding=(0,0,target_size[1] - mask.shape[1], target_size[0] - mask.shape[0]), fill=0)
+    
+    sample["image"] = torch.squeeze(img_norm)
+    sample["mask"] = torch.squeeze(mask)
     return sample
 
 class ASMDataset(NonGeoDataset):
@@ -135,6 +140,7 @@ class ASMDataModule(NonGeoDataModule):
         num_workers: int = 1,
         split: bool = False,
         split_n: int = None,
+        mines_only: bool = False,
         **kwargs
     ) -> None:
         """Initialize a new ASMModule instance.
@@ -144,10 +150,11 @@ class ASMDataModule(NonGeoDataModule):
             num_workers: Number of workers for parallel data loading.
             split: Whether or not to perform a new train-test-val split of data.
             split_n: Number of tiles to include in train-test-val split
+            mines_only: restrict data to only images that have mines in them
             **kwargs: Additional keyword arguments passed to ASMDataset.
         """
         # perform train-test-val split and pass path to output file as kwarg to ASMDataset
         if split:
-            split_path = split_asm_data(n=split_n)
+            split_path = split_asm_data(n=split_n, mines_only=mines_only)
             kwargs["split_path"] = split_path
         super().__init__(ASMDataset, batch_size, num_workers, **kwargs)
