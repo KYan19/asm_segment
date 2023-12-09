@@ -8,7 +8,8 @@ def split_asm_data(
     stratify_col="country", 
     save = True,
     out_path = "/n/home07/kayan/asm/data/train_test_split",
-    n = None
+    n = None,
+    mines_only = False
 ):
     """Split data into train/test/val sets.
 
@@ -23,11 +24,16 @@ def split_asm_data(
             path used to save file if save is True. Default is '/n/home07/kayan/data/train_test_split'
         n: int, optional
             restrict split to first n items in dataframe. Default is None.
+        mines_only: bool, optional
+            restrict data to only images that have mines in them
     """  
     
     label_df = gpd.read_file(path)
     if n is not None:
         label_df = label_df.head(n)
+        
+    if mines_only: 
+        label_df = label_df[label_df["label"] == 1]
     
     # split into train/val and test
     train, test = train_test_split(label_df, 
