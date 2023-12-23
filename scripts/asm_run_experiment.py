@@ -24,21 +24,22 @@ workers = mp.cpu_count()
 print(f"Running on {num_devices} {device}(s) with {workers} cpus")
 
 # model parameters
-lr = 1e-4
-n_epoch = 50
-batch_size = 16
+lr = 1e-5
+n_epoch = 20
+batch_size = 64
 loss = "ce"
 class_weights = [0.2,0.8]
-num_workers = 4
-mines_only = True
+num_workers = 8
+mines_only = False
 split = True
 split_n = None
+freeze_backbone = False
 
 # file names and paths
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 #root = "/n/home07/kayan/asm/data/"
 project = "ASM_seg" # project name in WandB
-run_name = "3_mines_only_smallbatch"
+run_name = "8_all_data_lowlr"
 
 datamodule = ASMDataModule(batch_size=batch_size, num_workers=num_workers, split=split, split_n=split_n, root=root, transforms=min_max_transform, mines_only=mines_only)
 
@@ -52,11 +53,11 @@ task = CustomSemanticSegmentationTask(
     num_classes=2,
     lr=lr,
     patience=5,
-    freeze_backbone=True,
+    freeze_backbone=freeze_backbone,
     freeze_decoder=False
 )
 
-wandb_logger = WandbLogger(project=project, name=run_name, log_model="all")
+wandb_logger = WandbLogger(project=project, name=run_name, log_model="true")
 
 class WandBCallback(Callback):
     def on_train_epoch_end(self, trainer, pl_module):
@@ -74,16 +75,16 @@ class WandBCallback(Callback):
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
  
         # outputs corresponds to our model predictions
-        # log n sample image predictions from first batch
-        if batch_idx == 0:
-            n = 10
+        # log n sample image predictions from every other batch
+        if batch_idx%2 == 0:
+            n = 1
             imgs = batch["image"]
             masks = batch["mask"].to(torch.float64)
             outputs = outputs.to(torch.float64)
             captions = ["Image", "Ground truth", "Prediction"]
             for i in range(n):
                 img = imgs[i][:-1] # remove NIR channel for plotting purposes
-                wandb_logger.log_image(key=f"Val {i}", images=[img, masks[i], outputs[i]], caption=captions)
+                wandb_logger.log_image(key=f"Val {batch_idx}-{i}", images=[img, masks[i], outputs[i]], caption=captions)
                 
 trainer = Trainer(
         accelerator=device,

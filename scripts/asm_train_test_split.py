@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 import pickle
 import geopandas as gpd
 import numpy as np
@@ -5,6 +7,7 @@ from sklearn.model_selection import train_test_split
 
 def split_asm_data(
     path="/n/home07/kayan/asm/data/filtered_labels.geojson", 
+    data_path="/n/holyscratch01/tambe_lab/kayan/karena/images/",
     stratify_col="country", 
     save = True,
     out_path = "/n/home07/kayan/asm/data/train_test_split",
@@ -16,6 +19,8 @@ def split_asm_data(
     Args:
         path: str, optional
             path to geojson file used to load dataframe. Default is '/n/home07/kayan/data/filtered_labels.geojson'
+        data_path: str, optional
+            path to directory with image files, used to cross-reference unique_ids in geojson file. Default is '/n/holyscratch01/tambe_lab/kayan/karena/images/'
         stratify_col: str, optional
             the name of the column used to stratify the data. Default is 'country'.
         save: bool, optional
@@ -34,6 +39,10 @@ def split_asm_data(
         
     if mines_only: 
         label_df = label_df[label_df["label"] == 1]
+        
+    # take out any files that are not present in the image directory
+    dir_ids = [Path(file_name).stem for file_name in os.listdir(data_path)]
+    label_df = label_df[label_df["unique_id"].isin(dir_ids)]
     
     # split into train/val and test
     train, test = train_test_split(label_df, 
