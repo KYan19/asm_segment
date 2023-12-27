@@ -1,4 +1,5 @@
 import sys
+import shutil
 import multiprocessing as mp
 import matplotlib.pyplot as plt
 import torch
@@ -22,6 +23,7 @@ from asm_models import *
 device, num_devices = ("cuda", torch.cuda.device_count()) if torch.cuda.is_available() else ("cpu", mp.cpu_count())
 workers = mp.cpu_count()
 print(f"Running on {num_devices} {device}(s) with {workers} cpus")
+print(f"Torch indicates there are {torch.get_num_threads()} CPUs")
 
 # model parameters
 lr = 1e-5
@@ -34,12 +36,13 @@ mines_only = False
 split = True
 split_n = None
 freeze_backbone = False
+save_split = True
 
 # file names and paths
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 #root = "/n/home07/kayan/asm/data/"
 project = "ASM_seg" # project name in WandB
-run_name = "8_all_data_lowlr"
+run_name = "9_all_data_lowlr_save"
 
 datamodule = ASMDataModule(batch_size=batch_size, num_workers=num_workers, split=split, split_n=split_n, root=root, transforms=min_max_transform, mines_only=mines_only)
 
@@ -57,7 +60,7 @@ task = CustomSemanticSegmentationTask(
     freeze_decoder=False
 )
 
-wandb_logger = WandbLogger(project=project, name=run_name, log_model="true")
+wandb_logger = WandbLogger(project=project, name=run_name, log_model="all", save_code=True)
 
 class WandBCallback(Callback):
     def on_train_epoch_end(self, trainer, pl_module):
@@ -85,7 +88,7 @@ class WandBCallback(Callback):
             for i in range(n):
                 img = imgs[i][:-1] # remove NIR channel for plotting purposes
                 wandb_logger.log_image(key=f"Val {batch_idx}-{i}", images=[img, masks[i], outputs[i]], caption=captions)
-                
+
 trainer = Trainer(
         accelerator=device,
         devices=num_devices,
@@ -96,3 +99,6 @@ trainer = Trainer(
 
 trainer.fit(model=task, datamodule=datamodule)
 wandb.finish()
+
+if save_split:
+    shutil.copyfile("/n/home07/kayan/asm/data/train_test_split", f"/n/home07/kayan/asm/data/splits/{run_name}-split")

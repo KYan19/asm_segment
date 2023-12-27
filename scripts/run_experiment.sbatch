@@ -2,12 +2,11 @@
 #SBATCH -J unet               # job name
 #SBATCH -o model.out          # standard output file
 #SBATCH -e model.err          # standard error file
-#SBATCH -N 1                  # number of nodes
 #SBATCH --gres=gpu:1          # number of GPUs
-#SBATCH -c 1                  # number of cores
-#SBATCH -p gpu                # partition
+#SBATCH --ntasks-per-node 8   # number of cores
+#SBATCH -p gpu_test           # partition
 #SBATCH -t 0-02:00            # time in D-HH:MM
-#SBATCH --mem=4G              # memory in GB
+#SBATCH --mem=32G             # memory in GB
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=kyan@g.harvard.edu
 

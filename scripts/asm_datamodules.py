@@ -100,7 +100,7 @@ class ASMDataset(NonGeoDataset):
         mask = rasterio.open(mask_fn).read(1)
         mask = torch.from_numpy(np.array(mask, dtype=np.int64))
         
-        sample = {"image": img, "mask": mask}
+        sample = {"image": img, "mask": mask, "id": self.ids[index]}
 
         if self.transforms is not None:
             sample = self.transforms(sample)
