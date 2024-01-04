@@ -33,16 +33,16 @@ loss = "ce"
 class_weights = [0.2,0.8]
 num_workers = 8
 mines_only = False
-split = True
+split = False
 split_n = None
 freeze_backbone = False
-save_split = True
+save_split = False
 
 # file names and paths
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 #root = "/n/home07/kayan/asm/data/"
 project = "ASM_seg" # project name in WandB
-run_name = "9_all_data_lowlr_save"
+run_name = "11_all_data_lowlr_norunningstats"
 
 datamodule = ASMDataModule(batch_size=batch_size, num_workers=num_workers, split=split, split_n=split_n, root=root, transforms=min_max_transform, mines_only=mines_only)
 
