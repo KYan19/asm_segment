@@ -9,6 +9,7 @@ import geopandas as gpd
 import rasterio
 import numpy as np
 from asm_train_test_split import split_asm_data
+from asm_models import *
 
 def min_max_transform(sample, target_size=(256,256)):
     img = sample["image"].permute(1, 2, 0) # moves spectral channels to final dimension
@@ -17,7 +18,6 @@ def min_max_transform(sample, target_size=(256,256)):
     # min-max scaling by channel
     img = img.numpy()
     img_norm = (img - np.min(img,axis=(0,1))) / (np.max(img,axis=(0,1)) - np.min(img,axis=(0,1))) 
-    
     img_norm = torch.tensor(img_norm).permute(2, 0, 1) # re-permute spectral channels to first dimension
     
     # resize data to be 256x256
@@ -35,6 +35,16 @@ def min_max_transform(sample, target_size=(256,256)):
     sample["image"] = torch.squeeze(img_norm)
     sample["mask"] = torch.squeeze(mask)
     return sample
+
+def rcf(sample, in_channels = 4, features = 16, kernel_size = 3, bias = -1.0):
+    # first normalize input
+    norm_sample = min_max_transform(sample)
+    norm_sample["norm_image"] = norm_sample["image"] # save normalized image separately
+    # extract RCF features, output size (B, 16, 256, 256)
+    rcf_model = CustomRCFModel(in_channels=in_channels, features=features, kernel_size=kernel_size, bias=bias)
+    img = norm_sample["image"].unsqueeze(dim=0)
+    norm_sample["image"] = rcf_model(img).squeeze()
+    return norm_sample
 
 class ASMDataset(NonGeoDataset):
     splits = ["train", "val", "test"]
@@ -104,7 +114,7 @@ class ASMDataset(NonGeoDataset):
 
         if self.transforms is not None:
             sample = self.transforms(sample)
-
+            
         return sample
     
     def plot(self, sample):
@@ -140,6 +150,7 @@ class ASMDataModule(NonGeoDataModule):
         num_workers: int = 1,
         split: bool = False,
         split_n: int = None,
+        save: bool = True,
         mines_only: bool = False,
         **kwargs
     ) -> None:
@@ -155,6 +166,6 @@ class ASMDataModule(NonGeoDataModule):
         """
         # perform train-test-val split and pass path to output file as kwarg to ASMDataset
         if split:
-            split_path = split_asm_data(n=split_n, mines_only=mines_only)
+            split_path = split_asm_data(n=split_n, save=save, mines_only=mines_only)
             kwargs["split_path"] = split_path
         super().__init__(ASMDataset, batch_size, num_workers, **kwargs)
