@@ -168,7 +168,7 @@ class CustomSemanticSegmentationTask(SemanticSegmentationTask):
                     plt.close()
             except ValueError:
                 pass
-        return y_hat_hard # return output for logging purposes
+        return torch.softmax(y_hat,dim=1)[:,1] # return output for logging purposes
     
     def test_step(self, batch, batch_id, dataloader_idx = 0):
         """Compute the test loss and additional metrics.

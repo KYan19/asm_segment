@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchgeo.datasets import NonGeoDataset, stack_samples, unbind_samples
 from torchgeo.datamodules import NonGeoDataModule
 from torchgeo.trainers import PixelwiseRegressionTask, SemanticSegmentationTask
-from torchvision.transforms import Resize, InterpolationMode
+from torchvision.transforms import Resize, InterpolationMode, ToPILImage
 from torchvision.transforms.functional import pad
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint
@@ -23,7 +23,6 @@ from asm_models import *
 # device configuration
 device, num_devices = ("cuda", torch.cuda.device_count()) if torch.cuda.is_available() else ("cpu", mp.cpu_count())
 workers = mp.cpu_count()
-torch.set_num_threads(8)
 print(f"Running on {num_devices} {device}(s) with {workers} cpus")
 print(f"Torch indicates there are {torch.get_num_threads()} CPUs")
 
@@ -45,20 +44,14 @@ save_split = False
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 #root = "/n/home07/kayan/asm/data/"
 project = "ASM_seg" # project name in WandB
-run_name = "13_all_data_lowlr_dataloader_w/eval"
+run_name = "21_unet_plotprob"
 
-# create dataloaders
-train_dataset = ASMDataset(root = root, transforms = min_max_transform, split = "train", 
-                           bands = ["R", "G", "B", "NIR"], split_path = split_path)
-train_dataloader = DataLoader(train_dataset, batch_size=batch_size, num_workers=8, shuffle=True)
-
-val_dataset = ASMDataset(root = root, transforms = min_max_transform, split = "val",
-                          bands = ["R", "G", "B", "NIR"], split_path = split_path)
-val_dataloader = DataLoader(val_dataset, batch_size=batch_size, num_workers=8, shuffle=False)
-
-test_dataset = ASMDataset(root = root, transforms = min_max_transform, split = "test",
-                          bands = ["R", "G", "B", "NIR"], split_path = split_path)
-test_dataloader = DataLoader(test_dataset, batch_size=batch_size, num_workers=8, shuffle=False)
+# create and set up datamodule
+datamodule = ASMDataModule(batch_size=batch_size, num_workers=num_workers, split=split, split_n=split_n, 
+                           root=root, transforms=min_max_transform, mines_only=mines_only, split_path=split_path)
+datamodule.setup("fit")
+train_dataloader = datamodule.train_dataloader()
+val_dataloader = datamodule.val_dataloader()
 
 task = CustomSemanticSegmentationTask(
     model="unet",
@@ -74,7 +67,7 @@ task = CustomSemanticSegmentationTask(
     freeze_decoder=False
 )
 
-wandb_logger = WandbLogger(project=project, name=run_name, log_model="all", save_code=True)
+wandb_logger = WandbLogger(project=project, name=run_name, log_model=True, save_code=True)
 checkpoint_callback = ModelCheckpoint(every_n_epochs=1)
 
 class WandBCallback(Callback):
@@ -101,8 +94,10 @@ class WandBCallback(Callback):
             outputs = outputs.to(torch.float64)
             captions = ["Image", "Ground truth", "Prediction"]
             for i in range(n):
-                img = imgs[i][:-1] # remove NIR channel for plotting purposes
-                wandb_logger.log_image(key=f"Val {batch_idx}-{i}", images=[img, masks[i], outputs[i]], caption=captions)
+                img = ToPILImage()(imgs[i][:-1]) # remove NIR channel for plotting purposes
+                mask = ToPILImage()(masks[i])
+                output = ToPILImage()(outputs[i])
+                wandb_logger.log_image(key=f"Val {batch_idx}-{i}", images=[img, mask, output], caption=captions)
 
 trainer = Trainer(
         accelerator=device,
@@ -113,6 +108,11 @@ trainer = Trainer(
     )
 
 trainer.fit(model=task, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
+
+# set up datamodule for testing
+datamodule.setup("test")
+test_dataloader = datamodule.test_dataloader()
+
 trainer.test(model=task, dataloaders=test_dataloader)
 
 # construct ROC curve
@@ -136,9 +136,8 @@ with torch.inference_mode():
 def pixelwise_to_class(pixelwise_preds):
     class_proba = {}
     for (unique_id,preds) in pixelwise_preds.items():
-        # average probability in pixels classified as mine (>0.5)
-        class_proba[unique_id] = np.mean(preds*(preds>0.5))
-        #class_proba[unique_id] = np.sum((preds>0.5))
+        # average probability across pixels
+        class_proba[unique_id] = np.mean(preds)
     return class_proba
 
 class_proba = pixelwise_to_class(pixelwise_predictions)
@@ -160,7 +159,3 @@ wandb.finish()
 
 if save_split:
     shutil.copyfile("/n/home07/kayan/asm/data/train_test_split", f"/n/home07/kayan/asm/data/splits/{run_name}-split")
-    
-for name, param in task.named_parameters():
-    if 'encoder.layer4.1.bn2' in name:  # Check if the parameter belongs to a batch normalization layer
-        print(f'Parameter name: {name}, Value: {param}')

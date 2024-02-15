@@ -36,12 +36,12 @@ def min_max_transform(sample, target_size=(256,256)):
     sample["mask"] = torch.squeeze(mask)
     return sample
 
-def rcf(sample, in_channels = 4, features = 16, kernel_size = 3, bias = -1.0):
+def rcf(sample, in_channels = 4, features = 16, kernel_size = 3, bias = -1.0, seed=42):
     # first normalize input
     norm_sample = min_max_transform(sample)
     norm_sample["norm_image"] = norm_sample["image"] # save normalized image separately
     # extract RCF features, output size (B, 16, 256, 256)
-    rcf_model = CustomRCFModel(in_channels=in_channels, features=features, kernel_size=kernel_size, bias=bias)
+    rcf_model = CustomRCFModel(in_channels=in_channels, features=features, kernel_size=kernel_size, bias=bias, seed=seed)
     img = norm_sample["image"].unsqueeze(dim=0)
     norm_sample["image"] = rcf_model(img).squeeze()
     return norm_sample

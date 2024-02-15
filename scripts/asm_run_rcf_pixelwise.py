@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchgeo.datasets import NonGeoDataset, stack_samples, unbind_samples
 from torchgeo.datamodules import NonGeoDataModule
 from torchgeo.trainers import PixelwiseRegressionTask, SemanticSegmentationTask
-from torchvision.transforms import Resize, InterpolationMode
+from torchvision.transforms import Resize, InterpolationMode, ToPILImage
 from torchvision.transforms.functional import pad
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint
@@ -27,11 +27,11 @@ print(f"Running on {num_devices} {device}(s) with {workers} cpus")
 print(f"Torch indicates there are {torch.get_num_threads()} CPUs")
 
 # model parameters
-lr = 1e-5
-n_epoch = 20
+lr = 1e-4
+n_epoch = 10
 batch_size = 64
 loss = "ce"
-class_weights = [0.2,0.8]
+class_weights = [0.05,0.95]
 num_workers = 4
 mines_only = False
 split = False
@@ -43,7 +43,7 @@ save_split = False
 # file names and paths
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 project = "ASM_seg" # project name in WandB
-run_name = "16_rcf_regression"
+run_name = "21_rcf_heavy_class_weights"
 
 # create and set up datamodule
 datamodule = ASMDataModule(batch_size=batch_size, num_workers=num_workers, split=split, split_n=split_n, 
@@ -56,7 +56,7 @@ task = CustomSemanticSegmentationTask(
     model="rcf",
     weights=True,
     loss=loss,
-    class_weights = torch.Tensor(class_weights),
+    class_weights = torch.Tensor(class_weights) if class_weights is not None else None,
     in_channels=16,
     num_classes=2,
     lr=lr
@@ -88,8 +88,10 @@ class WandBCallback(Callback):
             outputs = outputs.to(torch.float64)
             captions = ["Image", "Ground truth", "Prediction"]
             for i in range(n):
-                img = imgs[i][:-1] # remove NIR channel for plotting purposes
-                wandb_logger.log_image(key=f"Val {batch_idx}-{i}", images=[img, masks[i], outputs[i]], caption=captions)
+                img = ToPILImage()(imgs[i][:-1]) # remove NIR channel for plotting purposes
+                mask = ToPILImage()(masks[i])
+                output = ToPILImage()(outputs[i])
+                wandb_logger.log_image(key=f"Val {batch_idx}-{i}", images=[img, mask, output], caption=captions)
 
 trainer = Trainer(
         accelerator=device,
