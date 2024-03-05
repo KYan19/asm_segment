@@ -3,6 +3,8 @@ import segmentation_models_pytorch as smp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchgeo.datasets import NonGeoDataset, stack_samples, unbind_samples
 from torchgeo.datamodules import NonGeoDataModule
@@ -12,9 +14,63 @@ from torchvision.transforms.functional import pad
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
+import lightning as L
 import geopandas as gpd
 import rasterio
 import numpy as np
+
+class ConvNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 16, 3)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(16, 32, 3)
+        self.conv3 = nn.Conv2d(32, 64, 3)
+        self.fc1 = nn.Linear(64 * 30 * 30, 2)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = self.pool(F.relu(self.conv3(x)))
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = self.fc1(x)
+        return x
+
+class LightningConvNet(L.LightningModule):
+    def __init__(self, class_weights=None, lr=0.001, weight_decay=0.01):
+        super().__init__()
+        self.model = ConvNet()
+        self.class_weights = torch.Tensor(class_weights) if class_weights is not None else None
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.configure_loss()
+
+    def forward(self, inputs):
+        return self.model(inputs)
+
+    def training_step(self, batch, batch_idx):
+        inputs, target = batch
+        outputs = self(inputs)
+        loss = self.criterion(outputs, target)
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        inputs, target = batch
+        outputs = self.model(inputs)
+        loss = self.criterion(outputs, target)
+        self.log("val_loss", loss)
+        
+    def test_step(self, batch, batch_idx):
+        inputs, target = batch
+        outputs = self.model(inputs)
+        loss = self.criterion(outputs, target)
+        self.log("test_loss", loss)
+    
+    def configure_loss(self):
+        self.criterion = torch.nn.CrossEntropyLoss(weight=self.class_weights)
+
+    def configure_optimizers(self):
+        return torch.optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
 class RCFRegression(nn.Module):
     def __init__(self, input_features, num_classes):
@@ -61,6 +117,28 @@ class CustomRCFModel(RCF):
             return output
 
 class CustomSemanticSegmentationTask(SemanticSegmentationTask):
+    def __init__(
+        self,
+        model,
+        backbone,
+        weights = None,
+        in_channels = 4,
+        num_classes = 2,
+        loss = "focal",
+        class_weights = None,
+        lr = 1e-3,
+        patience = 10,
+        weight_decay = 1e-2,
+        freeze_backbone = False,
+        freeze_decoder = False,
+    ):
+        super().__init__(model, backbone, weights, in_channels, num_classes, loss=loss,
+                         class_weights=class_weights, lr=lr, freeze_backbone=freeze_backbone,       
+                         freeze_decoder=freeze_decoder)
+
+        # add weight decay parameter
+        self.hparams["weight_decay"] = weight_decay
+        
     def configure_models(self) -> None:
         """Initialize the model.
 
@@ -123,6 +201,19 @@ class CustomSemanticSegmentationTask(SemanticSegmentationTask):
         if self.hparams["freeze_decoder"] and model in ["unet", "deeplabv3+"]:
             for param in self.model.decoder.parameters():
                 param.requires_grad = False
+                
+    def configure_optimizers(self):
+        """Initialize the optimizer and learning rate scheduler.
+
+        Returns:
+            Optimizer and learning rate scheduler.
+        """
+        optimizer = AdamW(self.parameters(), lr=self.hparams["lr"], weight_decay=self.hparams["weight_decay"])
+        scheduler = ReduceLROnPlateau(optimizer, patience=self.hparams["patience"])
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {"scheduler": scheduler, "monitor": self.monitor},
+        }
                 
     def validation_step(
         self, batch, batch_idx, dataloader_idx=0):

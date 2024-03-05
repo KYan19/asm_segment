@@ -1,9 +1,10 @@
 import pickle
 import matplotlib.pyplot as plt
 import torch
+from torch.utils.data import TensorDataset, DataLoader
 from torchgeo.datasets import NonGeoDataset
 from torchgeo.datamodules import NonGeoDataModule
-from torchvision.transforms import Resize, InterpolationMode
+from torchvision.transforms import Resize, InterpolationMode, RandomCrop
 from torchvision.transforms.functional import pad
 import geopandas as gpd
 import rasterio
@@ -11,7 +12,7 @@ import numpy as np
 from asm_train_test_split import split_asm_data
 from asm_models import *
 
-def min_max_transform(sample, target_size=(256,256)):
+def min_max_transform(sample, target_size=(256,256), crop_size=None):
     img = sample["image"].permute(1, 2, 0) # moves spectral channels to final dimension
     mask = sample["mask"]
     
@@ -24,24 +25,21 @@ def min_max_transform(sample, target_size=(256,256)):
     img_norm = Resize((256,256),antialias=True)(torch.unsqueeze(img_norm,0))
     mask = Resize((256,256),interpolation=InterpolationMode.NEAREST)(torch.unsqueeze(mask, 0))
     
-    # pad data to be 256x256
-    #img_norm = [
-    #        pad(channel, padding=(0,0,target_size[1] - channel.shape[1], target_size[0] - channel.shape[0]), fill=0)
-    #        for channel in img_norm
-    #    ]
-    #img_norm = torch.stack(img_norm, dim=0)
-    #mask = pad(mask, padding=(0,0,target_size[1] - mask.shape[1], target_size[0] - mask.shape[0]), fill=0)
+    if crop_size is not None:
+        crop_transform = RandomCrop(crop_size)
+        img_norm = crop_transform(img_norm)
+        mask = crop_transform(mask)
     
     sample["image"] = torch.squeeze(img_norm)
     sample["mask"] = torch.squeeze(mask)
     return sample
 
-def rcf(sample, in_channels = 4, features = 16, kernel_size = 3, bias = -1.0, seed=42):
+def rcf(sample, in_channels = 4, features = 1000, kernel_size = 3, bias = -1.0, seed=42, crop_size=32, **kwargs):
     # first normalize input
-    norm_sample = min_max_transform(sample)
+    norm_sample = min_max_transform(sample, crop_size=crop_size)
     norm_sample["norm_image"] = norm_sample["image"] # save normalized image separately
-    # extract RCF features, output size (B, 16, 256, 256)
-    rcf_model = CustomRCFModel(in_channels=in_channels, features=features, kernel_size=kernel_size, bias=bias, seed=seed)
+    # extract RCF features, output size (B, features, crop_size, crop_size)
+    rcf_model = CustomRCFModel(in_channels=in_channels, features=features, kernel_size=kernel_size, bias=bias, seed=seed, **kwargs)
     img = norm_sample["image"].unsqueeze(dim=0)
     norm_sample["image"] = rcf_model(img).squeeze()
     return norm_sample
@@ -53,11 +51,12 @@ class ASMDataset(NonGeoDataset):
     
     def __init__(
         self,
-        root = "/n/home07/kayan/asm/data/",
+        root = "/n/holyscratch01/tambe_lab/kayan/karena/",
         transforms = None,
         split = "train",
         bands = ["R", "G", "B", "NIR"],
-        split_path = "/n/home07/kayan/asm/data/train_test_split"
+        split_path = "/n/home07/kayan/asm/data/train_test_split",
+        **kwargs
     ) -> None:
         """Initialize a new ASMData instance.
 
@@ -68,9 +67,11 @@ class ASMDataset(NonGeoDataset):
             split: one of "train," "val", or "test"
             bands: the subset of bands to load
             split_path: path to file containing unique identifiers for train/test/val split, generated with scripts/train_test_split.py
+            **kwargs: Additional keyword arguments passed on to transform function
         """  
         self.root = root
         self.transforms = transforms
+        self.transform_args = kwargs
         assert split in ["train", "val", "test"]
         self.bands = bands
         self.band_indices = [self.all_bands.index(b) + 1 for b in bands if b in self.all_bands] # add 1 since rasterio starts index at 1, not 0
@@ -113,7 +114,7 @@ class ASMDataset(NonGeoDataset):
         sample = {"image": img, "mask": mask, "id": self.ids[index]}
 
         if self.transforms is not None:
-            sample = self.transforms(sample)
+            sample = self.transforms(sample, **self.transform_args)
             
         return sample
     
@@ -150,7 +151,7 @@ class ASMDataModule(NonGeoDataModule):
         num_workers: int = 1,
         split: bool = False,
         split_n: int = None,
-        save: bool = True,
+        save: bool = False,
         mines_only: bool = False,
         **kwargs
     ) -> None:
@@ -169,3 +170,21 @@ class ASMDataModule(NonGeoDataModule):
             split_path = split_asm_data(n=split_n, save=save, mines_only=mines_only)
             kwargs["split_path"] = split_path
         super().__init__(ASMDataset, batch_size, num_workers, **kwargs)
+        
+def get_conv_dataloader(pixelwise_predictions, 
+                     batch_size,
+                     label_path="/n/home07/kayan/asm/data/filtered_labels.geojson", 
+                     split="train"):
+    assert split in ["train", "val", "test"]
+    inputs = np.array(list(pixelwise_predictions.values()))
+    label_df = gpd.read_file(label_path)
+    labels = [label_df[label_df["unique_id"]==x]["label"].values[0] for x in pixelwise_predictions.keys()]
+    
+    tensor_inputs = torch.Tensor(inputs)
+    tensor_inputs = tensor_inputs[:, None, :, :]
+    tensor_labels = torch.LongTensor(labels)
+    
+    shuffle = True if split=="train" else False
+    dataset = TensorDataset(tensor_inputs,tensor_labels)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    return dataloader

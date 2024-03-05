@@ -12,7 +12,8 @@ def split_asm_data(
     save = True,
     out_path = "/n/home07/kayan/asm/data/train_test_split",
     n = None,
-    mines_only = False
+    mines_only = False,
+    random_state = None
 ):
     """Split data into train/test/val sets.
 
@@ -30,7 +31,9 @@ def split_asm_data(
         n: int, optional
             restrict split to first n items in dataframe. Default is None.
         mines_only: bool, optional
-            restrict data to only images that have mines in them
+            restrict data to only images that have mines in them. Default is False.
+        random-state: int, optional
+            random seed used to generate train-test split. Default is None.
     """  
     
     label_df = gpd.read_file(path)
@@ -47,23 +50,21 @@ def split_asm_data(
     # split into train/val and test
     train, test = train_test_split(label_df, 
                 stratify=label_df[stratify_col] if stratify_col is not None else None,
-                test_size=0.2
+                test_size=0.2,
+                random_state=random_state
             )
     # split further into train and val
     train, val = train_test_split(train,
                 stratify=train[stratify_col] if stratify_col is not None else None,
-                test_size=0.2)
+                test_size=0.2,
+                random_state=random_state)
                                   
     # get unique identifiers for each split
     train_ids = train["unique_id"].values
     val_ids = val["unique_id"].values
     test_ids = test["unique_id"].values
-    print(f"Split with {len(train_ids)} train images, {len(val_ids)} validation images, and {len(test_ids)} test images")
-    print(f"Mine proportions\n Train: {len(train[train['label']==1.0])/len(train)}")
-    print(f" Validation: {len(val[val['label']==1.0])/len(val)}")
-    print(f" Test: {len(test[test['label']==1.0])/len(test)}")
-    split_ids = {"train": train_ids, "val": val_ids, "test":test_ids}
     
+    split_ids = {"train": train_ids, "val": val_ids, "test":test_ids}
     if save:
         # save as pickle file
         with open(out_path, 'wb') as handle:
