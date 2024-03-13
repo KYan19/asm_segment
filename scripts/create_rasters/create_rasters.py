@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 from pathlib import Path
-import tarfile
+import zipfile
 import numpy as np
 import geopandas as gpd
 import rasterio
