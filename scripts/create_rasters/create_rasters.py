@@ -7,14 +7,12 @@ import geopandas as gpd
 import rasterio
 from rasterio.features import geometry_mask
 
-data_path = "/n/home07/kayan/asm/data/karena.tar.gz" # home directory
-out_path = "/n/holyscratch01/tambe_lab/kayan/" # global scratch
+data_path = "/n/home07/kayan/asm/data/karena_images_updated.zip"
+out_path = "/n/holyscratch01/tambe_lab/kayan/karena/" # global scratch
 
 # comment next two lines out if images have already been extracted
-#with tarfile.open(data_path, 'r:gz') as tar:
-#    tar.extractall(out_path, filter="data")
-    
-out_path = "/n/holyscratch01/tambe_lab/kayan/karena/"
+with zipfile.ZipFile(data_path, 'r') as zip_ref:
+    zip_ref.extractall(out_path+"images/")
     
 # generates a list of unique image identifiers (strips away file ending)
 img_ids = [Path(x).stem for x in os.listdir(out_path+"images") if x.lower().endswith(".tif")]
