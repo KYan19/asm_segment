@@ -2,3 +2,16 @@
 *.tar.gz
 __pycache__/
 .ipynb_checkpoints
+notebooks/old
+notebooks/artifacts
+notebooks/checkpoints
+notebooks/sandbox.ipynb
+scripts/wandb
+scripts/ASM_conv_sweep
+scripts/ASM_seg
+scripts/ASM_seg_test
+scripts/ASM_seg_sweep
+scripts/lightning_logs
+scripts/model.err
+scripts/model.out
+scripts/old
