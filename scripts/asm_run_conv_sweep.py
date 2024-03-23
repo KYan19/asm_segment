@@ -19,7 +19,7 @@ from asm_models import *
 
 # PARAMETERS
 project = "ASM_conv_sweep" # project name in WandB
-run_name = "1_sweep" # run name in WandB
+run_name = "2_sweep" # run name in WandB
 n_epoch = 10
 class_weights = [1/6,5/6]
 
@@ -30,7 +30,7 @@ sweep_configuration = {
     "name": "sweep",
     "metric": {"goal": "minimize", "name": "val_loss"},
     "parameters": {
-        "lr": {"values": [1e-2, 1e-3, 1e-4]},
+        "lr": {"values": [1e-2,1e-3,1e-4]},
         "weight_decay": {"values": [1e-1, 1e-2, 1e-3]}
     }
 }
@@ -54,7 +54,7 @@ with open(data_dir+"test_seg_preds"+suffix, 'rb') as handle:
     test_pixelwise_predictions = pickle.load(handle)
 
 # datamodule configuration
-batch_size = 64
+batch_size = 128
 num_workers = workers # set to maximum number of available CPUs
 
 # set up dataloaders
@@ -124,7 +124,7 @@ def main():
     wandb.log({"ROC": wandb.Image(fig)})
     
     auc = roc_auc_score(true_labels, class_proba)
-    print(f"lr: {lr}, weight decay: {weight_decay}, AUC: {auc}")
+    wandb.log({"AUC": auc})
     
     wandb.finish()
     

@@ -4,7 +4,7 @@
 #SBATCH -e model.err          # standard error file
 #SBATCH --gres=gpu:1          # number of GPUs
 #SBATCH -p gpu_test           # partition
-#SBATCH -t 0-03:00            # time in D-HH:MM
+#SBATCH -t 0-00:20            # time in D-HH:MM
 #SBATCH --mem=32G             # memory in GB
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=kyan@g.harvard.edu
