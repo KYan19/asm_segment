@@ -1,3 +1,4 @@
+import os
 import sys
 import shutil
 import multiprocessing as mp
@@ -21,18 +22,19 @@ from asm_datamodules import *
 from asm_models import *
 
 # device configuration
-device, num_devices = ("cuda", torch.cuda.device_count()) if torch.cuda.is_available() else ("cpu", mp.cpu_count())
-workers = mp.cpu_count()
+device, num_devices = ("cuda", torch.cuda.device_count()) if torch.cuda.is_available() else ("cpu", len(os.sched_getaffinity(0)))
+workers = len(os.sched_getaffinity(0))
 print(f"Running on {num_devices} {device}(s) with {workers} cpus")
 print(f"Torch indicates there are {torch.get_num_threads()} CPUs")
+torch.set_num_threads(workers)
 
 # model parameters
 lr = 1e-4
-n_epoch = 10
+n_epoch = 5
 batch_size = 64
 loss = "ce"
-class_weights = [0.05,0.95]
-num_workers = 4
+class_weights = [0.2,0.8]
+num_workers = workers
 mines_only = False
 split = False
 split_n = None
@@ -43,11 +45,21 @@ save_split = False
 # file names and paths
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 project = "ASM_seg" # project name in WandB
-run_name = "21_rcf_heavy_class_weights"
+run_name = "22_rcf_1000feat_empirical"
 
-# create and set up datamodule
+# set up dataset to sample from in empirical RCF
+emp_rcf_dataset = ASMDataset(transforms=min_max_transform, split="train", split_path=split_path)
+
+# rcf parameters
+features = 1000
+crop_size = None
+mode = "empirical" # empirical or gaussian
+dataset = emp_rcf_dataset # dataset to sample from, if mode is empirical
+
+# create and set up RCF-transformed datamodule 
 datamodule = ASMDataModule(batch_size=batch_size, num_workers=num_workers, split=split, split_n=split_n, 
-                           root=root, transforms=rcf, mines_only=mines_only, split_path=split_path)
+                           root=root, transforms=rcf, mines_only=mines_only, split_path=split_path,
+                           features=features, crop_size=crop_size, mode=mode, dataset=dataset)
 datamodule.setup("fit")
 train_dataloader = datamodule.train_dataloader()
 val_dataloader = datamodule.val_dataloader()
@@ -57,7 +69,7 @@ task = CustomSemanticSegmentationTask(
     weights=True,
     loss=loss,
     class_weights = torch.Tensor(class_weights) if class_weights is not None else None,
-    in_channels=16,
+    in_channels=features,
     num_classes=2,
     lr=lr
 )

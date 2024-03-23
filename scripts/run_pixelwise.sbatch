@@ -3,10 +3,11 @@
 #SBATCH -o model.out          # standard output file
 #SBATCH -e model.err          # standard error file
 #SBATCH --gres=gpu:1          # number of GPUs
-#SBATCH --ntasks-per-node 4   # number of cores
+#SBATCH --ntasks=1            # number of tasks
+#SBATCH --cpus-per-task=8     # number of CPUs
 #SBATCH -p gpu_test           # partition
-#SBATCH -t 0-01:00            # time in D-HH:MM
-#SBATCH --mem=32G              # memory in GB
+#SBATCH -t 0-02:00            # time in D-HH:MM
+#SBATCH --mem=128G              # memory in GB
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=kyan@g.harvard.edu
 
@@ -18,4 +19,4 @@ conda activate geo-ml
 module load cuda/12.2.0-fasrc01
 
 # Run program
-srun -c 1  python3 asm_run_rcf_pixelwise.py
+python3 asm_run_rcf_pixelwise.py
