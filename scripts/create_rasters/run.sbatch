@@ -5,7 +5,7 @@
 #SBATCH -N 1                  # number of nodes
 #SBATCH -c 1                  # number of cores
 #SBATCH -p shared             # partition
-#SBATCH -t 0-02:00            # time in D-HH:MM
+#SBATCH -t 0-00:30            # time in D-HH:MM
 #SBATCH --mem=8G              # memory in GB
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=kyan@g.harvard.edu

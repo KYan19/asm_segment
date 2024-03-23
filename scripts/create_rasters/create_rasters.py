@@ -11,14 +11,17 @@ data_path = "/n/home07/kayan/asm/data/karena_images_updated.zip"
 out_path = "/n/holyscratch01/tambe_lab/kayan/karena/" # global scratch
 
 # comment next two lines out if images have already been extracted
-with zipfile.ZipFile(data_path, 'r') as zip_ref:
-    zip_ref.extractall(out_path+"images/")
+#with zipfile.ZipFile(data_path, 'r') as zip_ref:
+#    zip_ref.extractall(out_path+"images/")
     
 # generates a list of unique image identifiers (strips away file ending)
 img_ids = [Path(x).stem for x in os.listdir(out_path+"images") if x.lower().endswith(".tif")]
 
 # geodataframe with mine information
 label_df = gpd.read_file(out_path+"/filtered_labels.geojson")
+
+# existing rasters, if any
+existing_raster_ids = [Path(x).stem for x in os.listdir(out_path+"rasters") if x.lower().endswith(".tif")]
 
 def rasterize(geo,out_shape,transform):
     """Given a geometry, converts to a boolean raster with the geometry marked as True"""
@@ -38,6 +41,10 @@ def rasterize(geo,out_shape,transform):
 
 # for each image, save the corresponding mine raster as a .tif file
 for img_id in img_ids:
+    if img_id in existing_raster_ids:
+        # this raster has already been generated; let's skip it
+        continue
+
     img = rasterio.open(out_path+"images/"+img_id+".tif")
     rgb_img = img.read([3,2,1]) # RGB channels
     
