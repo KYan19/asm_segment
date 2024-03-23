@@ -26,13 +26,15 @@ class ConvNet(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(16, 32, 3)
         self.conv3 = nn.Conv2d(32, 64, 3)
-        self.fc1 = nn.Linear(64 * 30 * 30, 2)
+        #self.fc1 = nn.Linear(64 * 30 * 30, 2)
+        self.fc1 = nn.Linear(64,2)
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         x = self.pool(F.relu(self.conv3(x)))
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
+        x = nn.MaxPool2d(30, 30)(x)
+        #x = torch.flatten(x, 1) # flatten all dimensions except batch
         x = self.fc1(x)
         return x
 
@@ -52,6 +54,7 @@ class LightningConvNet(L.LightningModule):
         inputs, target = batch
         outputs = self(inputs)
         loss = self.criterion(outputs, target)
+        self.log("train_loss", loss)
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -126,6 +129,9 @@ class CustomSemanticSegmentationTask(SemanticSegmentationTask):
         num_classes = 2,
         loss = "focal",
         class_weights = None,
+        alpha = None,
+        gamma = 2.0,
+        focal_normalized = False,
         lr = 1e-3,
         patience = 10,
         weight_decay = 1e-2,
@@ -138,6 +144,37 @@ class CustomSemanticSegmentationTask(SemanticSegmentationTask):
 
         # add weight decay parameter
         self.hparams["weight_decay"] = weight_decay
+        self.hparams["alpha"] = alpha
+        self.hparams["gamma"] = gamma
+        self.hparams["focal_normalized"] = focal_normalized
+        
+    def configure_losses(self) -> None:
+        """Initialize the loss criterion.
+
+        Raises:
+            ValueError: If *loss* is invalid.
+        """
+        loss: str = self.hparams["loss"]
+        ignore_index = self.hparams["ignore_index"]
+        if loss == "ce":
+            ignore_value = -1000 if ignore_index is None else ignore_index
+            self.criterion = nn.CrossEntropyLoss(
+                ignore_index=ignore_value, weight=self.hparams["class_weights"]
+            )
+        elif loss == "jaccard":
+            self.criterion = smp.losses.JaccardLoss(
+                mode="multiclass", classes=self.hparams["num_classes"]
+            )
+        elif loss == "focal":
+            self.criterion = smp.losses.FocalLoss(
+                "multiclass", ignore_index=ignore_index, normalized=self.hparams["focal_normalized"], 
+                alpha=self.hparams["alpha"], gamma=self.hparams["gamma"]
+            )
+        else:
+            raise ValueError(
+                f"Loss type '{loss}' is not valid. "
+                "Currently, supports 'ce', 'jaccard' or 'focal' loss."
+            )
         
     def configure_models(self) -> None:
         """Initialize the model.
@@ -284,3 +321,4 @@ class CustomSemanticSegmentationTask(SemanticSegmentationTask):
         self.log("test_loss", loss)
         self.test_metrics(y_hat_hard, y)
         self.log_dict(self.test_metrics)
+
