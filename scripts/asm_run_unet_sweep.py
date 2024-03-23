@@ -11,8 +11,9 @@ from torchgeo.datamodules import NonGeoDataModule
 from torchgeo.trainers import PixelwiseRegressionTask, SemanticSegmentationTask
 from torchvision.transforms import Resize, InterpolationMode, ToPILImage
 from torchvision.transforms.functional import pad
+from torchmetrics import AUROC
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, EarlyStopping
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint, EarlyStopping, LearningRateMonitor
 from lightning.pytorch.loggers import WandbLogger
 import geopandas as gpd
 import rasterio
@@ -25,9 +26,11 @@ from asm_models import *
 # PARAMETERS
 split = False # generate new splits if True; use saved splits if False
 project = "ASM_seg_sweep" # project name in WandB
-run_name = "2_sweep" # run name in WandB
+run_name = "6cont_sweep_focalhparams" # run name in WandB
 n_epoch = 30
 class_weights = None
+patience = 3
+early_stop_patience = 8
 
 # ---SET UP HYPERPARAMETER SWEEP---
 # configuration
@@ -36,8 +39,10 @@ sweep_configuration = {
     "name": "sweep",
     "metric": {"goal": "minimize", "name": "val_loss"},
     "parameters": {
-        "lr": {"values": [1e-3, 1e-4, 1e-5]},
-        "weight_decay": {"values": [1e-1, 1e-2, 1e-3]},
+        "lr": {"values": [1e-5]},
+        "alpha": {"values": [3/4, 7/8]}, # focal loss hparam
+        "gamma": {"values": [1, 2]}, # focal loss hparam
+        "weight_decay": {"value": 1e-2},
         "loss": {"value": "focal"}
     }
 }
@@ -94,6 +99,35 @@ val_dataloader = datamodule.val_dataloader()
 datamodule.setup("test")
 test_dataloader = datamodule.test_dataloader()
 
+# callback to calculate val AUC at end of each epoch
+# uses a simple global averaging function to transform seg output -> image pred
+class AUCCallback(Callback):
+    def on_validation_epoch_end(self, trainer, pl_module):
+        val_dataloader = trainer.val_dataloaders
+        
+        pl_module.eval()
+        preds = []
+        targets = []
+        with torch.inference_mode():
+            for samples in val_dataloader:
+                inputs = samples["image"].to(device)
+                masks = samples["mask"].to(device)
+                
+                outputs = pl_module(inputs) # get model output
+                outputs = torch.softmax(outputs, dim=1) # softmax over class dimension
+                
+                img_preds = torch.mean(outputs, dim=(-1,-2)) # average over x and y dimensions
+                img_targets = (torch.sum(masks, dim=(-1,-2)) > 0) # will be >0 if contains a mine, 0 otherwise
+                preds.append(img_preds[:,1]) # append probability of mine class
+                targets.append(img_targets) # append true labels
+                
+        preds = torch.cat(preds)
+        targets = torch.cat(targets)
+        auc_task = AUROC(task="binary")
+        auc_score = auc_task(preds,targets)
+        
+        wandb.log({"val_AUC": auc_score.item()}, step=trainer.global_step)
+
 # callback for WandB logging
 class WandBCallback(Callback):
     def on_train_epoch_end(self, trainer, pl_module):
@@ -133,6 +167,8 @@ def main():
     lr = wandb.config["lr"]
     weight_decay = wandb.config["weight_decay"]
     loss = wandb.config["loss"]
+    alpha = wandb.config["alpha"]
+    gamma = wandb.config["gamma"]
     
     # set up model
     task = CustomSemanticSegmentationTask(
@@ -141,10 +177,13 @@ def main():
         weights=True, # use ImageNet weights
         loss=loss,
         class_weights = torch.Tensor(class_weights) if class_weights is not None else None,
+        alpha=alpha,
+        gamma=gamma,
         in_channels=4,
         num_classes=2,
         lr=lr,
         weight_decay=weight_decay,
+        patience=patience,
         freeze_backbone=False,
         freeze_decoder=False
     )
@@ -153,21 +192,24 @@ def main():
     early_stop_callback = EarlyStopping(
            monitor='val_loss',
            min_delta=0.00,
-           patience=3,
+           patience=early_stop_patience,
            verbose=False,
            mode='min'
         )
+    lr_callback = LearningRateMonitor(logging_interval="epoch")
 
     trainer = Trainer(
-            accelerator=device,
-            devices=num_devices,
-            max_epochs=n_epoch,
-            callbacks=[WandBCallback(), checkpoint_callback, early_stop_callback],
-            logger=wandb_logger
-        )
+        accelerator=device,
+        devices=num_devices,
+        max_epochs=n_epoch,
+        num_sanity_val_steps=0,
+        check_val_every_n_epoch=1,
+        callbacks=[AUCCallback(), WandBCallback(), checkpoint_callback, early_stop_callback, lr_callback],
+        logger=wandb_logger
+    )
 
     trainer.fit(model=task, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
-    trainer.test(model=task, dataloaders=test_dataloader)
+    #trainer.test(model=task, dataloaders=test_dataloader)
     wandb.finish()
     
 wandb.agent(sweep_id, function=main)
