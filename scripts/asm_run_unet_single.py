@@ -27,13 +27,13 @@ from asm_models import *
 
 # PARAMETERS
 split = False # generate new splits if True; use saved splits if False
-project = "ASM_seg" # project name in WandB
-run_name = "unet_focal_lr5e-4" # run name in WandB
+project = "ASM_seg_global" # project name in WandB
+run_name = "unet_global_split670487" # run name in WandB
 n_epoch = 30
 class_weights = None
 alpha = 0.75
 gamma = 1
-lr = 5e-4
+lr = 1e-3
 weight_decay = 0.01
 loss = "focal"
 patience = 2
@@ -72,6 +72,7 @@ if split:
 num_workers = workers # set to maximum number of available CPUs
 root = "/n/holyscratch01/tambe_lab/kayan/karena/" # root for data files
 split_path = "/n/home07/kayan/asm/data/splits/split_670487" # one of the randomly generated splits
+#split_path = "/n/home07/kayan/asm/data/splits/split_LOCO_TZA"
 
 # create and set up datamodule
 datamodule = ASMDataModule(batch_size=batch_size, 
@@ -233,6 +234,9 @@ ax.set_title("Test ROC")
 ax.set_xlabel("False Positive")
 ax.set_ylabel("True Positive")
 wandb.log({"ROC": wandb.Image(fig)})
-print(f"AUC is: {roc_auc_score(true_labels, class_proba)}")
+
+auc = roc_auc_score(true_labels, class_proba)
+wandb.log({"Test AUC": auc})
+print(f"AUC is: {auc}")
 
 wandb.finish()
